@@ -2,66 +2,111 @@
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
-import path from "path";
-import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 8080;
+
+// ✅ Simple status route for Render
+app.get("/", (req, res) => {
+  res.send("✅ WebRTC Signaling Server is running...");
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// Store connected users
 const users = new Map();
 
 wss.on("connection", (ws) => {
-  console.log("New connection");
+  console.log("🟢 New connection");
 
   ws.on("message", (message) => {
-    try {
-      const data = JSON.parse(message);
-      switch (data.type) {
-        case "login":
-          ws.username = data.username;
-          users.set(data.username, ws);
-          sendUserList();
-          break;
+    const data = JSON.parse(message);
+    const { type, payload } = data;
 
-        case "offer":
-        case "answer":
-        case "candidate":
-        case "end-call":
-        case "reject-call":
-          const target = users.get(data.target);
-          if (target && target.readyState === target.OPEN) {
-            target.send(JSON.stringify(data));
-          }
-          break;
-
-        default:
-          break;
+    switch (type) {
+      case "login": {
+        const { username } = payload;
+        users.set(username, ws);
+        console.log(`👤 ${username} logged in`);
+        ws.send(JSON.stringify({ type: "login-success" }));
+        broadcastUsers();
+        break;
       }
-    } catch (err) {
-      console.error("Message error:", err);
+
+      case "call": {
+        const { target, from } = payload;
+        const targetSocket = users.get(target);
+        if (targetSocket) {
+          targetSocket.send(JSON.stringify({ type: "incoming-call", from }));
+        }
+        break;
+      }
+
+      case "accept": {
+        const { from, to } = payload;
+        const callerSocket = users.get(from);
+        if (callerSocket) {
+          callerSocket.send(JSON.stringify({ type: "call-accepted", from: to }));
+        }
+        break;
+      }
+
+      case "reject": {
+        const { from, to } = payload;
+        const callerSocket = users.get(from);
+        if (callerSocket) {
+          callerSocket.send(JSON.stringify({ type: "call-rejected", from: to }));
+        }
+        break;
+      }
+
+      case "offer":
+      case "answer":
+      case "candidate": {
+        const { target } = payload;
+        const targetSocket = users.get(target);
+        if (targetSocket) {
+          targetSocket.send(JSON.stringify({ type, ...payload }));
+        }
+        break;
+      }
+
+      case "hangup": {
+        const { target, from } = payload;
+        const targetSocket = users.get(target);
+        if (targetSocket) {
+          targetSocket.send(JSON.stringify({ type: "hangup", from }));
+        }
+        break;
+      }
+
+      default:
+        console.log("⚙️ Unknown type:", type);
     }
   });
 
   ws.on("close", () => {
-    if (ws.username) users.delete(ws.username);
-    sendUserList();
-  });
-
-  function sendUserList() {
-    const onlineUsers = [...users.keys()];
-    for (const [_, userWs] of users.entries()) {
-      userWs.send(
-        JSON.stringify({ type: "user-list", users: onlineUsers })
-      );
+    for (const [username, socket] of users.entries()) {
+      if (socket === ws) {
+        users.delete(username);
+        console.log(`❌ ${username} disconnected`);
+        broadcastUsers();
+      }
     }
-  }
+  });
 });
 
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Signaling server running on port ${PORT}`);
-});
+function broadcastUsers() {
+  const userList = Array.from(users.keys());
+  for (const socket of users.values()) {
+    socket.send(JSON.stringify({ type: "users", users: userList }));
+  }
+}
+
+server.listen(PORT, "0.0.0.0", () =>
+  console.log(`✅ Server running on http://0.0.0.0:${PORT}`)
+);
