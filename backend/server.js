@@ -1,59 +1,67 @@
 // server.js
 import express from "express";
-import http from "http";
 import { WebSocketServer } from "ws";
-import cors from "cors";
+import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(cors());
-app.get("/", (req, res) => res.send("✅ WebRTC Audio Backend is running."));
-
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 const users = new Map();
 
 wss.on("connection", (ws) => {
-  console.log("🔗 Client connected");
+  console.log("New connection");
 
   ws.on("message", (message) => {
-    const data = JSON.parse(message);
+    try {
+      const data = JSON.parse(message);
+      switch (data.type) {
+        case "login":
+          ws.username = data.username;
+          users.set(data.username, ws);
+          sendUserList();
+          break;
 
-    switch (data.type) {
-      case "login":
-        ws.username = data.payload.username;
-        users.set(ws.username, ws);
-        ws.send(JSON.stringify({ type: "login-success" }));
-        broadcastUsers();
-        break;
+        case "offer":
+        case "answer":
+        case "candidate":
+        case "end-call":
+        case "reject-call":
+          const target = users.get(data.target);
+          if (target && target.readyState === target.OPEN) {
+            target.send(JSON.stringify(data));
+          }
+          break;
 
-      case "call":
-      case "offer":
-      case "answer":
-      case "candidate":
-      case "hangup":
-      case "accept":
-      case "reject":
-        const target = users.get(data.payload.target);
-        if (target && target.readyState === ws.OPEN) {
-          target.send(JSON.stringify(data));
-        }
-        break;
+        default:
+          break;
+      }
+    } catch (err) {
+      console.error("Message error:", err);
     }
   });
 
   ws.on("close", () => {
     if (ws.username) users.delete(ws.username);
-    broadcastUsers();
+    sendUserList();
   });
+
+  function sendUserList() {
+    const onlineUsers = [...users.keys()];
+    for (const [_, userWs] of users.entries()) {
+      userWs.send(
+        JSON.stringify({ type: "user-list", users: onlineUsers })
+      );
+    }
+  }
 });
 
-function broadcastUsers() {
-  const list = [...users.keys()];
-  for (const [_, client] of users) {
-    client.send(JSON.stringify({ type: "users", users: list }));
-  }
-}
-
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Signaling server running on port ${PORT}`);
+});
