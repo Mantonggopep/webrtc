@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vet Nexus Call</title>
+  <link rel="stylesheet" href="main.css" />
+</head>
+<body>
+  <div class="container">
+    <h2>Vet Nexus Pro — Audio Call</h2>
+
+    <div id="loginSection">
+      <input id="usernameInput" placeholder="Enter your name..." />
+      <button id="loginBtn">Login</button>
+    </div>
+
+    <div id="appSection" style="display:none;">
+      <h3>Online Users</h3>
+      <ul id="userList"></ul>
+
+      <div id="callInfo" style="display:none;">
+        <p id="statusText"></p>
+        <button id="endCallBtn" style="background:#f66;">End Call</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="ringtone" src="assets/ringtone.mp3"></audio>
+  <script src="main.js"></script>
+</body>
+</html>

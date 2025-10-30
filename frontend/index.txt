@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vet Nexus Call</title>
+  <link rel="stylesheet" href="main.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen" class="screen active">
+      <h2>Enter Username</h2>
+      <input type="text" id="username" placeholder="Your name..." />
+      <button id="loginBtn">Login</button>
+    </div>
+
+    <!-- MAIN SCREEN -->
+    <div id="main-screen" class="screen">
+      <div class="header">
+        <h2>Online Users</h2>
+        <span id="currentUser"></span>
+      </div>
+      <ul id="userList"></ul>
+    </div>
+
+    <!-- INCOMING CALL OVERLAY -->
+    <div id="incoming-call" class="overlay hidden">
+      <div class="popup">
+        <p id="callerName"></p>
+        <button id="acceptBtn" class="accept">Accept</button>
+        <button id="rejectBtn" class="reject">Reject</button>
+      </div>
+    </div>
+
+    <!-- CALL SCREEN -->
+    <div id="call-screen" class="screen">
+      <div class="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+      <div class="controls">
+        <span id="callTimer">00:00</span>
+        <button id="hangupBtn" class="hangup">Hang Up</button>
+      </div>
+    </div>
+  </div>
+
+  <audio id="ringtone" src="./assets/ringtone.mp3" loop></audio>
+  <script src="main.js"></script>
+</body>
+</html>

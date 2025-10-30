@@ -1,0 +1,12 @@
+{
+  "name": "webrtc-backend",
+  "version": "1.0.0",
+  "description": "Minimal WebRTC signaling server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
