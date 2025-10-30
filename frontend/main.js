@@ -5,16 +5,15 @@ let username = localStorage.getItem("username") || null;
 let peer;
 let localStream;
 let currentCall = null;
-let callStartTime = null;
 let callTimer;
 const ringtone = new Audio("./assets/ringtone.mp3");
 ringtone.loop = true;
 
-// ✅ Detect environment automatically
+// ✅ Use correct Render WebSocket URL
 const signalingServer =
   location.hostname === "localhost"
     ? "ws://localhost:8080"
-    : "wss://webrtc-backend.onrender.com"; // 🔁 replace with your Render URL
+    : "wss://webrtc-1-vjn2.onrender.com";
 
 // DOM elements
 const loginSection = document.getElementById("loginSection");
@@ -26,7 +25,7 @@ const statusText = document.getElementById("statusText");
 const callInfo = document.getElementById("callInfo");
 const endCallBtn = document.getElementById("endCallBtn");
 
-// ✅ Auto-login if user exists
+// ✅ Auto-login if username exists
 if (username) {
   usernameInput.value = username;
   connectWebSocket();
@@ -47,53 +46,28 @@ function connectWebSocket() {
 
   ws.onopen = () => {
     console.log("✅ Connected to signaling server");
-    ws.send(JSON.stringify({ type: "login", payload: { username } }));
+    ws.send(JSON.stringify({ type: "login", username }));
   };
 
   ws.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
     switch (data.type) {
-      case "login-success":
-        console.log("🟢 Logged in as", username);
-        loginSection.style.display = "none";
-        appSection.style.display = "block";
-        break;
-
-      case "users":
+      case "user-list":
         updateUserList(data.users);
-        break;
-
-      case "incoming-call":
-        console.log("📞 Incoming call from", data.from);
-        ringtone.play();
-        const accept = confirm(`Incoming call from ${data.from}. Accept?`);
-        ringtone.pause();
-        ringtone.currentTime = 0;
-        if (accept) {
-          startCall(data.from, true);
-          ws.send(JSON.stringify({ type: "accept", payload: { from: data.from, to: username } }));
-        } else {
-          ws.send(JSON.stringify({ type: "reject", payload: { from: data.from, to: username } }));
-        }
-        break;
-
-      case "call-accepted":
-        console.log("✅ Call accepted by", data.from);
-        createOffer(data.from);
         break;
 
       case "offer":
         console.log("📨 Offer received from", data.from);
-        await handleOffer(data.offer, data.from);
+        await handleOffer(data);
         break;
 
       case "answer":
         console.log("📨 Answer received from", data.from);
         await peer.setRemoteDescription(new RTCSessionDescription(data.answer));
         startTimer();
-        callInfo.style.display = "block";
         statusText.textContent = `In call with ${data.from}`;
+        callInfo.style.display = "block";
         break;
 
       case "candidate":
@@ -102,13 +76,13 @@ function connectWebSocket() {
         }
         break;
 
-      case "call-rejected":
-        console.log("🚫 Call rejected by", data.from);
+      case "end-call":
+        console.log("🛑 Call ended by", data.from);
         endCall();
         break;
 
-      case "hangup":
-        console.log("🛑 Call ended by", data.from);
+      case "reject-call":
+        console.log("🚫 Call rejected by", data.from);
         endCall();
         break;
 
@@ -124,10 +98,10 @@ function connectWebSocket() {
 
   ws.onerror = (err) => {
     console.error("❌ WebSocket error:", err);
-    ws.close();
   };
 }
 
+// ✅ Update list of online users
 function updateUserList(users) {
   userList.innerHTML = "";
   users
@@ -147,16 +121,16 @@ function updateUserList(users) {
     });
 }
 
+// ✅ Start calling another user
 async function initiateCall(target) {
   currentCall = target;
-  callStartTime = new Date();
-  callInfo.style.display = "block";
   statusText.textContent = `Calling ${target}...`;
+  callInfo.style.display = "block";
 
-  startCall(target, false);
-  ws.send(JSON.stringify({ type: "call", payload: { target, from: username } }));
+  await startCall(target, false);
 }
 
+// ✅ Prepare audio stream and peer connection
 async function startCall(target, isReceiver) {
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   peer = new RTCPeerConnection();
@@ -174,27 +148,38 @@ async function startCall(target, isReceiver) {
       ws.send(
         JSON.stringify({
           type: "candidate",
-          payload: { target, candidate: event.candidate, from: username },
+          target,
+          candidate: event.candidate,
+          from: username,
         })
       );
     }
   };
 
   if (!isReceiver) {
-    createOffer(target);
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    ws.send(
+      JSON.stringify({ type: "offer", target, offer, from: username })
+    );
   }
 }
 
-async function createOffer(target) {
-  const offer = await peer.createOffer();
-  await peer.setLocalDescription(offer);
-  ws.send(JSON.stringify({ type: "offer", payload: { target, offer, from: username } }));
-}
+// ✅ Handle incoming offer
+async function handleOffer(data) {
+  const { offer, from } = data;
 
-async function handleOffer(offer, from) {
+  const accept = confirm(`Incoming call from ${from}. Accept?`);
+  if (!accept) {
+    ws.send(JSON.stringify({ type: "reject-call", target: from, from: username }));
+    return;
+  }
+
+  ringtone.pause();
+  ringtone.currentTime = 0;
+
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   peer = new RTCPeerConnection();
-
   localStream.getTracks().forEach((t) => peer.addTrack(t, localStream));
 
   peer.ontrack = (event) => {
@@ -208,7 +193,9 @@ async function handleOffer(offer, from) {
       ws.send(
         JSON.stringify({
           type: "candidate",
-          payload: { target: from, candidate: event.candidate, from: username },
+          target: from,
+          candidate: event.candidate,
+          from: username,
         })
       );
     }
@@ -217,13 +204,14 @@ async function handleOffer(offer, from) {
   await peer.setRemoteDescription(new RTCSessionDescription(offer));
   const answer = await peer.createAnswer();
   await peer.setLocalDescription(answer);
-  ws.send(JSON.stringify({ type: "answer", payload: { target: from, answer, from: username } }));
+  ws.send(JSON.stringify({ type: "answer", target: from, answer, from: username }));
 
   startTimer();
-  callInfo.style.display = "block";
   statusText.textContent = `In call with ${from}`;
+  callInfo.style.display = "block";
 }
 
+// ✅ End call manually or remotely
 function endCall() {
   if (peer) peer.close();
   peer = null;
@@ -234,11 +222,12 @@ function endCall() {
 
 endCallBtn.onclick = () => {
   if (currentCall) {
-    ws.send(JSON.stringify({ type: "hangup", payload: { target: currentCall, from: username } }));
+    ws.send(JSON.stringify({ type: "end-call", target: currentCall, from: username }));
   }
   endCall();
 };
 
+// ✅ Timer handling
 function startTimer() {
   const start = Date.now();
   callTimer = setInterval(() => {
